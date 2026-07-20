@@ -4,45 +4,12 @@ import config
 from xray_model.model_loader import load_chexnet_model
 from xray_model.predictor import run_prediction, interpret_probabilities
 from utils.data_mapping import format_findings_for_prompt
-
-# --- EXAMPLE PATIENT DATA (User can modify this) ---
-# In a real application, this would be loaded from a database or user input.
-PATIENT_INFO = """
-Patient Name: John Doe
-Age: 65
-Sex: Male
-ID: 123456
-
-Chief Complaint:
-- Shortness of breath for 3 days
-- Dry cough and low-grade fever
-
-History of Present Illness:
-- Worsening dyspnea over the last 3 days
-- Mild, persistent dry cough with mild chest pain on deep inspiration
-- Fever around 38°C
-
-Past Medical History:
-- Hypertension, controlled
-- Type 2 Diabetes Mellitus
-- Former smoker (20 pack-years, quit 7 years ago)
-
-Medications:
-- Metformin 1000mg/day
-- Lisinopril 10mg/day
-
-Allergies: None known
-
-Physical Examination:
-- Temp: 38.2°C, RR: 22/min, Pulse: 90/min, BP: 130/80 mmHg
-- O2 Saturation: 91% on room air
-- Auscultation: Fine crackles at both lung bases
-
-Laboratory Results:
-- WBC: 8,400/μL (slightly elevated)
-- C-Reactive Protein (CRP): Elevated
-"""
-MEDICAL_CONTEXT = "Evaluate for infectious or inflammatory lung disease (e.g., pneumonia, heart failure)."
+import glob
+import io
+import pandas as pd
+from PIL import Image
+import os
+import tempfile
 
 def run_diagnostic_workflow(image_path):
     """
@@ -64,12 +31,95 @@ def run_diagnostic_workflow(image_path):
     
     # 4. Format AI findings into a text block for the LLM
     image_findings_text = format_findings_for_prompt(predictions, uncertainties, pred_probs, uncert_probs)
-    print("\n--- Step 3: Formatting Findings for LLM ---")
+    print("\n--- Step 3: Formatting Findings ---")
     print(image_findings_text)
     
+
+
+def extract_image_bytes(img_cell):
+    """
+    Extract bytes from the 'image' cell.
+    Supports dict {'bytes': ...}, raw bytes, or string path.
+    """
+    if isinstance(img_cell, dict):
+        return img_cell.get('bytes') or img_cell.get('path')
+    elif isinstance(img_cell, bytes):
+        return img_cell
+    elif isinstance(img_cell, str):
+        return img_cell
+    return None
+
+def save_bytes_to_temp_png(img_bytes):
+    """
+    Save image bytes to a temporary PNG file and return its path.
+    """
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    temp_path = temp_file.name
+    temp_file.close()
+
+    with open(temp_path, "wb") as f:
+        f.write(img_bytes)
+
+    return temp_path
+
 if __name__ == '__main__':
-    # Use the image path from the config file
-    image_to_diagnose = config.SINGLE_TEST_IMAGE
-    
-    # Run the entire workflow
-    run_diagnostic_workflow(image_to_diagnose)
+    PARQUET_DIR = config.PARQUET_DIR
+    parquet_files = glob.glob(os.path.join(PARQUET_DIR, "*.parquet"))
+
+    print(f"Found {len(parquet_files)} parquet files.")
+
+    for pq_file in parquet_files:
+        print(f"\nProcessing: {pq_file}")
+
+        try:
+            df = pd.read_parquet(pq_file)
+
+            if 'image' not in df.columns:
+                print(f"Skipping {pq_file}: no 'image' column found.")
+                continue
+
+            for idx, row in df.iterrows():
+                img_cell = row['image']
+                temp_image_path = None
+                image_path = None
+
+                try:
+                    extracted = extract_image_bytes(img_cell)
+
+                    if extracted is None:
+                        print(f"Row {idx}: could not extract image data.")
+                        continue
+
+                    if isinstance(extracted, bytes):
+                        temp_image_path = save_bytes_to_temp_png(extracted)
+                        image_path = temp_image_path
+
+                    elif isinstance(extracted, str):
+                        # If it's already a path
+                        if os.path.exists(extracted):
+                            image_path = extracted
+                        else:
+                            print(f"Row {idx}: file not found -> {extracted}")
+                            continue
+
+                    else:
+                        print(f"Row {idx}: unsupported image type -> {type(extracted)}")
+                        continue
+
+                    print(f"Running model on row {idx} -> {image_path}")
+
+                    # Run your full workflow on each image
+                    run_diagnostic_workflow(image_path)
+
+                except Exception as e:
+                    print(f"Row {idx}: error during processing -> {e}")
+
+                finally:
+                    # Clean up temporary file if we created one
+                    if temp_image_path and os.path.exists(temp_image_path):
+                        os.remove(temp_image_path)
+
+        except Exception as e:
+            print(f"Failed to read parquet file {pq_file}: {e}")
+
+    print("\nDone processing all parquet images.")

@@ -8,7 +8,7 @@ path_to_repository="D:\\projects\\vqa_chest\\CheXLlama-main"
 
 CKPT_PATH = path_to_repository+'\\model.pth.tar'
 DATA_DIR = path_to_repository+'\\ChestX-ray14\\images'
-SINGLE_TEST_IMAGE = path_to_repository+'\\ChestX-ray14\\images\\00000003_002.png'
+PARQUET_DIR = 'D:\\projects\\vqa_chest\\data-chexnet'
 path_to_API = path_to_repository + "\\API_KEY.env"
 
 # --- MODEL & DIAGNOSIS CONFIGURATION ---
@@ -41,14 +41,6 @@ NO_FINDING_THRESHOLD = 1
 # Margin for flagging a result as 'uncertain'
 # If abs(probability - threshold) <= UNCERTAINTY_MARGIN, it's uncertain.
 UNCERTAINTY_MARGIN = 0.1
-
-# --- LLM CONFIGURATION ---
-load_dotenv(dotenv_path=path_to_API)
-# The user must set their GROQ_API_KEY in the .env file
-GROQ_API_KEY = os.getenv("API_KEY")
-LLM_MODEL_NAME = "llama-3.1-8b-instant"
-LLM_TEMPERATURE = 0.7
-LLM_MAX_TOKENS = 2048 # Increased for more detailed reports
 
 # --- TORCH CONFIGURATION ---
 DEVICE = 'cpu'  # Can be changed to 'cuda' if a GPU is available
