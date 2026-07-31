@@ -3,6 +3,7 @@ main.py
 -------
 End‑to‑end evaluation of CheXNet with several conformal prediction methods,
 including the new Mondrian (label‑conditional) approach.
+After evaluation, saves all conformal parameters for later single‑image inference.
 
 Usage:
     python main.py
@@ -29,13 +30,11 @@ from utils.data_mapping import format_findings_for_prompt
 from THR import (
     fit_thr,
     fit_ecot,
-    predict_sets,              # generic threshold‑based prediction
+    predict_sets,
     evaluate_prediction_sets,
 )
-# Legacy APS / RAPS (kept for completeness, though they are broken for multi‑label)
 from APS import fit_aps as old_fit_aps, predict_sets_aps as old_predict_aps
 from RAPS import fit_raps as old_fit_raps, predict_sets_raps as old_predict_raps
-# Mondrian conformal (label‑conditional)
 from mondrian import fit_mondrian, predict_mondrian
 
 # ----------------------------------------------------------------------
@@ -58,14 +57,12 @@ CLASS_THRESHOLDS = {
 
 
 def to_numpy(arr):
-    """Convert a torch Tensor or numpy array to a numpy array."""
     if isinstance(arr, torch.Tensor):
         return arr.detach().cpu().numpy()
     return np.asarray(arr)
 
 
 def label_to_vector(label_array, class_names=DEFAULT_CLASS_NAMES):
-    """Convert a list of disease strings to a binary label vector."""
     vector = np.zeros(len(class_names), dtype=np.int32)
     for name in label_array:
         name = name.strip()
@@ -78,9 +75,6 @@ def label_to_vector(label_array, class_names=DEFAULT_CLASS_NAMES):
     return vector
 
 
-# ----------------------------------------------------------------------
-# Robust parquet reading (unchanged logic, slightly cleaned)
-# ----------------------------------------------------------------------
 def read_parquet_with_fallback(file_path):
     methods = [
         lambda: pd.read_parquet(file_path),
@@ -106,7 +100,6 @@ def _read_parquet_in_batches(file_path):
 
 
 def extract_image_bytes(img_cell):
-    """Extract raw image bytes from a variety of storage formats."""
     if isinstance(img_cell, bytes):
         return img_cell
     if isinstance(img_cell, dict):
@@ -140,7 +133,6 @@ if __name__ == '__main__':
     all_labels = []
     total_processed = 0
 
-    # Load model once
     model = load_chexnet_model(config.CKPT_PATH, config.N_CLASSES)
 
     for pq_file in parquet_files:
@@ -153,7 +145,6 @@ if __name__ == '__main__':
                 print("No 'image' column, skipping.")
                 continue
 
-            # Find label column
             label_col = None
             for col in ['label', 'labels', 'targets', 'finding_labels']:
                 if col in df.columns:
@@ -187,12 +178,10 @@ if __name__ == '__main__':
                     else:
                         continue
 
-                    # Run model
                     probs = run_prediction(model, image_path)
                     if probs.ndim == 2:
                         probs = probs.squeeze(0)
 
-                    # Ground truth label
                     raw_label = row[label_col]
                     if isinstance(raw_label, np.ndarray):
                         raw_label = raw_label.tolist()
@@ -220,9 +209,6 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Failed to process {pq_file}: {e}")
 
-    # ------------------------------------------------------------------
-    # Evaluate all methods on the collected data
-    # ------------------------------------------------------------------
     if not all_probs:
         print("\nNo data collected. Exiting.")
         exit()
@@ -230,15 +216,14 @@ if __name__ == '__main__':
     all_probs = np.stack(all_probs)
     all_labels = np.stack(all_labels)
 
-    # Split into calibration and test
     cal_probs, test_probs, cal_labels, test_labels = train_test_split(
         all_probs, all_labels, test_size=0.5, random_state=42
     )
     print(f"\nCalibration: {cal_probs.shape[0]}, Test: {test_probs.shape[0]}")
 
-    alpha = 0.1   # target miscoverage
+    alpha = 0.1
 
-    # 1. Fixed (expert) thresholds
+    # 1. Fixed thresholds
     fixed_thresh = np.array([CLASS_THRESHOLDS[name] for name in DEFAULT_CLASS_NAMES])
     fixed_pred = predict_sets(test_probs, fixed_thresh)
     fixed_met = evaluate_prediction_sets(fixed_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
@@ -248,27 +233,30 @@ if __name__ == '__main__':
     ecot_pred = predict_sets(test_probs, ecot_thresh)
     ecot_met = evaluate_prediction_sets(ecot_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
 
-    # 3. THR (label‑wise conformal)
+    # 3. THR
     thr_thresh = fit_thr(cal_probs, cal_labels, alpha)
     thr_pred = predict_sets(test_probs, thr_thresh)
     thr_met = evaluate_prediction_sets(thr_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
 
-    # 4. Mondrian (label‑conditional)
+    # 4. Mondrian
     mondrian_thresh = fit_mondrian(cal_probs, cal_labels, alpha)
     mondrian_pred = predict_mondrian(test_probs, mondrian_thresh)
     mondrian_met = evaluate_prediction_sets(mondrian_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
 
-    # 5 & 6. Legacy APS / RAPS
+    # 5. APS
     q_aps = old_fit_aps(cal_probs, cal_labels, alpha)
     aps_pred = old_predict_aps(test_probs, q_aps)
     aps_met = evaluate_prediction_sets(aps_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
 
-    q_raps = old_fit_raps(cal_probs, cal_labels, alpha, lam=0.01, k_reg=1)
-    raps_pred = old_predict_raps(test_probs, q_raps, lam=0.01, k_reg=1)
+    # 6. RAPS (with fixed lambda and k_reg)
+    lam_raps = 0.01
+    k_reg_raps = 1
+    q_raps = old_fit_raps(cal_probs, cal_labels, alpha, lam=lam_raps, k_reg=k_reg_raps)
+    raps_pred = old_predict_raps(test_probs, q_raps, lam_raps, k_reg_raps)
     raps_met = evaluate_prediction_sets(raps_pred, test_labels, DEFAULT_CLASS_NAMES, alpha)
 
     # ------------------------------------------------------------------
-    # Display results
+    # Display evaluation results (same as before)
     # ------------------------------------------------------------------
     print("\n" + "=" * 80)
     print(f"📊 Full comparison (α = {alpha:.0%})")
@@ -283,13 +271,11 @@ if __name__ == '__main__':
         ("RAPS (legacy)", raps_met),
     ]
 
-    # Summary table
     print(f"{'Method':<20} {'Coverage':>8} {'Avg Size':>10} {'F1':>7}")
     print("-" * 50)
     for name, met in methods:
         print(f"{name:<20} {met['coverage']:8.4f} {met['avg_set_size']:10.2f} {met['set_f1']:7.4f}")
 
-    # Class‑conditional coverage
     print("\nClass‑conditional coverage:")
     header = f"{'Class':<22}"
     for name, _ in methods:
@@ -302,10 +288,34 @@ if __name__ == '__main__':
             row += f"{met['class_conditional_coverage'].get(cls, 1.0):10.4f}"
         print(row)
 
-    # Worst class per method
     print("\nWorst class‑conditional coverage:")
     for name, met in methods:
         cls, cov = met['worst_class_coverage']
         print(f"  {name:<20}: {cls} (coverage={cov:.4f})")
 
-    print("\n🏁 Evaluation complete.")
+    # ------------------------------------------------------------------
+    # ✅ SAVE ALL CONFORMAL PARAMETERS
+    # ------------------------------------------------------------------
+    save_dir = "conformal_params"
+    os.makedirs(save_dir, exist_ok=True)
+
+    np.save(os.path.join(save_dir, "fixed_thresh.npy"), fixed_thresh)
+    np.save(os.path.join(save_dir, "ecot_thresh.npy"), ecot_thresh)
+    np.save(os.path.join(save_dir, "thr_thresh.npy"), thr_thresh)
+    np.save(os.path.join(save_dir, "mondrian_thresh.npy"), mondrian_thresh)
+    np.save(os.path.join(save_dir, "q_aps.npy"), np.array(q_aps))
+    np.save(os.path.join(save_dir, "q_raps.npy"), np.array(q_raps))
+    np.save(os.path.join(save_dir, "lam_raps.npy"), np.array(lam_raps))
+    np.save(os.path.join(save_dir, "k_reg_raps.npy"), np.array(k_reg_raps))
+    np.save(os.path.join(save_dir, "alpha.npy"), np.array(alpha))
+
+    print("\n💾 Conformal parameters saved to 'conformal_params/' folder.")
+    print("   - fixed_thresh.npy")
+    print("   - ecot_thresh.npy")
+    print("   - thr_thresh.npy")
+    print("   - mondrian_thresh.npy")
+    print("   - q_aps.npy")
+    print("   - q_raps.npy, lam_raps.npy, k_reg_raps.npy")
+    print("   - alpha.npy (just for reference)")
+
+    print("\n🏁 Evaluation and saving complete.")
