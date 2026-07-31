@@ -7,7 +7,7 @@ We experiment on the **CheXpert** dataset, comparing a fixed‑threshold baselin
 
 | Method | Description |
 |--------|-------------|
-| **Fixed Threshold** | Classical baseline – labels with probability > 0.5 |
+| **Fixed Threshold** | Classical baseline |
 | **THR** (Threshold) | Conformal calibration of a single global threshold |
 | **APS** (Adaptive Prediction Sets) | Adaptive threshold per example using sorted probabilities |
 | **RAPS** (Regularized APS) | APS with a penalty on set size for tighter sets |
