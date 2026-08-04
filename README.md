@@ -116,7 +116,7 @@ Calibration set: `2,803` samples | Test set: `2,804` samples
 
 #### Figure 1: Coverage and Average Set Size vs α
 
-![Figure 1](https://raw.githubusercontent.com/aminsistani5589/Conformal-Prediction-for-Multi-Label-Chest-X-ray-Classification/main/diagrams/Figure_1.png)
+![Figure 1](./diagrams/Figure_1.png)
 
 **Description:**  
 Left: Empirical coverage of each method across different α levels, compared against the ideal target coverage line (1 − α).  
@@ -125,7 +125,7 @@ Right: Average prediction set size as a function of α.
 
 #### Figure 2: F1 Score and Efficiency–Coverage Trade-off
 
-![Figure 2](https://raw.githubusercontent.com/aminsistani5589/Conformal-Prediction-for-Multi-Label-Chest-X-ray-Classification/main/diagrams/Figure_2.png)
+![Figure 2](./diagrams/Figure_2.png)
 
 **Description:**  
 Left: F1 score improves as α increases (sets become smaller and more precise).  
