@@ -14,7 +14,6 @@ import matplotlib.image as mpimg
 import config
 from xray_model.model_loader import load_chexnet_model
 from xray_model.predictor import run_prediction
-from utils.data_mapping import format_findings_for_prompt
 
 # Conformal modules
 from THR import predict_sets
@@ -24,7 +23,6 @@ from mondrian import predict_mondrian
 
 # ========== SETTINGS (change these as you wish) ==========
 IMAGE_PATH = r"D:\\projects\\benchmarking-cp-medical-noise-main\\ChestX-ray14\\images\\00000013_030.png"
-TRUE_LABELS = None           # مثال: "Atelectasis,Effusion" یا None برای نادیده گرفتن
 PARAMS_DIR = "conformal_params"
 # =========================================================
 
@@ -40,18 +38,6 @@ def to_numpy(arr):
     if isinstance(arr, torch.Tensor):
         return arr.detach().cpu().numpy()
     return np.asarray(arr)
-
-def label_to_vector(label_array, class_names=DEFAULT_CLASS_NAMES):
-    vector = np.zeros(len(class_names), dtype=np.int32)
-    for name in label_array:
-        name = name.strip()
-        if name == "No Finding":
-            continue
-        try:
-            vector[class_names.index(name)] = 1
-        except ValueError:
-            print(f"Warning: disease '{name}' not in class list; ignoring.")
-    return vector
 
 def load_params(params_dir="conformal_params"):
     fixed = np.load(os.path.join(params_dir, "fixed_thresh.npy"))
@@ -76,14 +62,6 @@ if __name__ == "__main__":
         probs = probs.squeeze(0)
     probs = to_numpy(probs)
 
-    # Handle true labels
-    if TRUE_LABELS is not None:
-        true_vec = label_to_vector([x.strip() for x in TRUE_LABELS.split(',')])
-    else:
-        true_vec = np.zeros(len(DEFAULT_CLASS_NAMES), dtype=np.int32)
-
-    true_active = [DEFAULT_CLASS_NAMES[i] for i, v in enumerate(true_vec) if v]
-    print(f"True labels: {true_active if true_active else 'No Finding'}")
     print(f"Model probabilities: {dict(zip(DEFAULT_CLASS_NAMES, np.round(probs, 4)))}")
 
     probs_batch = probs[np.newaxis, ...]
@@ -114,12 +92,13 @@ if __name__ == "__main__":
     for name, s in sets.items():
         print(f"  {name:<20}: {s if s else 'Empty'}")
 
-    # Show image
+    # Show image with prediction sets only
     img = mpimg.imread(IMAGE_PATH)
     plt.figure(figsize=(10, 8))
     plt.imshow(img, cmap='gray')
     plt.axis('off')
-    lines = ["True labels: " + (", ".join(true_active) if true_active else "No Finding"), ""]
+
+    lines = []
     for name, labels in sets.items():
         lines.append(f"{name}: {', '.join(labels) if labels else 'Empty set'}")
     text = "\n".join(lines)

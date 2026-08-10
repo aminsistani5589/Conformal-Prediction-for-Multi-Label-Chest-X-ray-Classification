@@ -26,6 +26,16 @@ All methods are evaluated with respect to:
 
 =======
 
+### Why these metrics matter
+
+In conformal multi-label prediction, the primary objective is not to maximize point-wise classification accuracy, but to control prediction uncertainty through valid set-valued outputs. For this reason, the main evaluation criteria in this work are:
+
+- **Empirical coverage**, which measures whether the true label set is contained in the predicted set at the desired rate;
+- **Average set size**, which measures efficiency, since smaller valid sets are more informative in practice;
+- **Class-conditional coverage**, which reveals whether overall validity masks systematic failures on specific pathologies.
+
+> **Note:** We also report **F1 score** for completeness, but it should be interpreted as a secondary metric. In set prediction, higher F1 can arise simply from producing smaller, sharper sets, even when those sets fail to satisfy the desired coverage guarantee.
+
 ## 📊 Experimental Results
 
 **Dataset split:**  
@@ -46,6 +56,8 @@ Calibration set: `2,803` samples | Test set: `2,804` samples
 | APS (legacy) | 0.8955 | 9.20 | 0.1626 | ❌ |
 | RAPS (legacy) | 0.8959 | 9.55 | 0.1607 | ❌ |
 
+At the target level (alpha = 0.1), the main question is not which method attains the highest F1, but which methods achieve the required coverage with the smallest possible prediction sets. From this perspective, **ECOT** provides the best empirical trade-off in our experiments: it satisfies the 90% coverage target while remaining the only valid method with an average set size below 5. In contrast, **THR** attains slightly higher coverage, but does so by producing larger sets; **APS** and **RAPS** are both less efficient and empirically undercover at this operating point.
+
 **Key observations:**
 
 - **Baseline (Fixed Threshold)** fails to meet the 90% coverage guarantee, despite having the smallest set size – it is overconfident and unreliable.
@@ -53,8 +65,11 @@ Calibration set: `2,803` samples | Test set: `2,804` samples
 - **ECOT** achieves the best trade-off: it is **the only valid method with an average set size below 5**, producing significantly tighter prediction sets than THR or Mondrian.
 - The legacy implementations of **APS and RAPS** both undercover (≈89.6%) and yield extremely large sets (≥9.2), highlighting the need for proper regularization when applying conformal prediction to multi-label problems.
 - F1 is reported for completeness, but **set predictors trade point-wise precision for guaranteed coverage** – their primary metrics are coverage and set size.
+- The comparison highlights the central conformal trade-off: methods that enforce coverage necessarily tend to increase prediction set size. Therefore, comparisons should not be made using F1 alone, but through the joint lens of **validity** (coverage) and **efficiency** (set size).
 
 ### 📈 Overall Metrics Across α Levels
+
+Evaluating each method across multiple values of α is important because conformal predictors are designed to operate under user-specified error tolerances. A robust method should therefore track the target coverage level (1-α) consistently as α varies, while reducing prediction set size as the target becomes less conservative. This multi-α view provides a more complete picture than a single operating point, since it reveals whether a method is stably calibrated or only appears competitive at one specific choice of α.
 
 --- ECOT ---
 | α | Target Cov | Achieved Cov | Avg Set Size | F1 |
@@ -135,6 +150,8 @@ Right: Efficiency (1 / Avg. Set Size) versus achieved coverage. This plot clearl
 
 ### 🔬 Class‑Conditional Coverage Analysis
 
+While marginal coverage is the standard conformal guarantee, it can conceal substantial heterogeneity across classes in imbalanced multi-label datasets. This is especially important in medical imaging, where rare pathologies may be clinically significant despite contributing little to the aggregate metric. We therefore examine class-conditional empirical coverage to identify which methods remain reliable across both common and rare findings, and which methods achieve overall validity only by averaging over uneven class behavior.
+
 Coverage per pathology across all methods.  
 **Bold** numbers indicate where the 90% target is met for that specific class.
 
@@ -155,6 +172,12 @@ Coverage per pathology across all methods.
 | Pleural Thickening | 89             | 3.17           | 0.7079     | **0.9101** | 0.8876     | **0.9213** | 0.8202     | 0.8090     |
 | Hernia             | 7              | 0.25           | 0.1429     | 0.4286     | 0.7143     | 0.5714     | 0.8571     | 0.8571     |
 
+Two patterns are immediately visible in the class-wise results. First, conformal calibration substantially improves coverage over the Fixed Threshold baseline for most pathologies, particularly on moderate-prevalence findings such as **Nodule**, **Pleural Thickening**, and **Pneumonia**. Second, empirical class-wise coverage remains highly uneven, especially for rare classes. This illustrates an important limitation of marginal guarantees: strong average coverage does not imply uniformly strong coverage for every pathology.
+
+- **Frequent classes** (e.g., Infiltration, Atelectasis, Effusion) benefit consistently from conformal calibration, although some still remain slightly below the 90% target under certain methods.
+- **Rare classes** (e.g., Hernia, Fibrosis, Pneumonia) exhibit much higher variability, which is expected given their limited number of positive test examples.
+- **Mondrian** improves coverage for some minority classes, but does not fully eliminate rare-class instability in finite samples.
+
 ### 🚨 Most Challenging Classes (Worst-Case Coverage)
 
 | Method          | Worst Class | Coverage |
@@ -167,7 +190,40 @@ Coverage per pathology across all methods.
 | RAPS (legacy)   | Pneumonia   | 0.7419   |
 
 **Takeaway:**  
-Hernia – an extremely rare finding in CheXpert – remains the Achilles' heel for all methods. While conformal predictors improve its coverage dramatically (from **14% → 71%** with THR), none fully meet the 90% target for this class.  
-Mondrian’s per-class guarantee also suffers on Hernia, suggesting that further class‑adaptive strategies or data augmentation are needed for long‑tail pathologies.
+**Hernia**, the rarest pathology in the test set, is the most challenging class for all methods. Although conformal predictors improve its empirical coverage substantially relative to the Fixed Threshold baseline (from **14.3%** to **71.4%** under THR), none reaches the nominal 90% target on this class.
 
----
+This result should be interpreted carefully. Because Hernia has only **7 positive test examples**, its empirical coverage estimate is inherently high-variance. Therefore, the observed failure is informative as a warning sign, but should not be over-interpreted as a definitive ranking between methods on this class. More broadly, this result illustrates a central practical limitation of conformal prediction in highly imbalanced multi-label settings: **marginal validity does not guarantee strong rare-class performance in finite samples**.
+
+## Discussion
+
+The experiments reveal three main conclusions.
+
+First, the **Fixed Threshold** baseline is efficient in terms of set size, but fails to satisfy the desired coverage target. This makes it unsuitable in settings where uncertainty control is required.
+
+Second, among the conformal methods evaluated here, **ECOT**, **THR**, and **Mondrian** are the only approaches that achieve valid marginal coverage at α = 0.1. Among these, **ECOT** offers the best empirical coverage–efficiency trade-off, achieving target validity with the smallest prediction sets.
+
+Third, class-wise analysis shows that good marginal coverage does not ensure uniformly good performance across all pathologies. Rare findings such as **Hernia** remain difficult for all methods, highlighting the importance of evaluating conformal predictors beyond aggregate statistics.
+
+Taken together, these results suggest that conformal prediction is a meaningful improvement over fixed-threshold multi-label classification when reliability matters, but that rare-class robustness remains an open challenge in long-tailed medical datasets.
+
+## Limitations
+
+This study has several limitations.
+
+1. The results are based on a single dataset split, so the reported rankings may depend on the particular calibration/test partition.
+2. The empirical behavior of class-conditional coverage is strongly affected by class imbalance, especially for pathologies with very few positive examples.
+3. The reported coverage values are empirical and finite-sample; they should not be interpreted as exact equality to the nominal target.
+4. APS and RAPS are included here as legacy implementations, and their behavior may depend substantially on implementation details and regularization choices.
+5. The Fixed Threshold baseline uses heuristically selected class-specific thresholds rather than thresholds optimized under a formal decision objective.
+
+These limitations do not invalidate the main conclusions, but they do caution against overgeneralizing from a single benchmark setting.
+
+## What this benchmark shows
+
+This benchmark is not intended to identify a universally best conformal predictor. Rather, it is designed to expose the practical trade-offs that arise when uncertainty guarantees are imposed on multi-label medical classification. In particular, the experiments show that:
+
+- naive thresholding can be efficient but unreliable;
+- valid conformal methods differ substantially in how much efficiency they sacrifice to achieve coverage;
+- aggregate validity can obscure severe failures on rare classes.
+
+For this reason, the most informative comparison is not based on any single metric, but on the joint analysis of marginal coverage, set size, and class-conditional behavior.
