@@ -58,10 +58,6 @@ Calibration set: `2,803` samples | Test set: `2,804` samples
 
 At the target level (alpha = 0.1), the main question is not which method attains the highest F1, but which methods achieve the required coverage with the smallest possible prediction sets. From this perspective, **ECOT** provides the best empirical trade-off in our experiments: it satisfies the 90% coverage target while remaining the only valid method with an average set size below 5. In contrast, **THR** attains slightly higher coverage, but does so by producing larger sets; **APS** and **RAPS** are both less efficient and empirically undercover at this operating point.
 
-# Conformal Prediction Evaluation: Trade-off Analysis
-
-In Conformal Prediction, the ideal method provides valid coverage ($\geq 1 - \alpha$) while maintaining statistical efficiency (minimal prediction set size). To quantitatively evaluate this trade-off, we formalize the model selection using a **Penalized Efficiency Score (PES)** based on Lagrangian relaxation.
-
 **Key observations:**
 
 - **Baseline (Fixed Threshold)** fails to meet the 90% coverage guarantee, despite having the smallest set size – it is overconfident and unreliable.
@@ -71,6 +67,9 @@ In Conformal Prediction, the ideal method provides valid coverage ($\geq 1 - \al
 - F1 is reported for completeness, but **set predictors trade point-wise precision for guaranteed coverage** – their primary metrics are coverage and set size.
 - The comparison highlights the central conformal trade-off: methods that enforce coverage necessarily tend to increase prediction set size. Therefore, comparisons should not be made using F1 alone, but through the joint lens of **validity** (coverage) and **efficiency** (set size).
 
+# Conformal Prediction Evaluation: Trade-off Analysis
+
+In Conformal Prediction, the ideal method provides valid coverage ($\geq 1 - \alpha$) while maintaining statistical efficiency (minimal prediction set size). To quantitatively evaluate this trade-off, we formalize the model selection using a **Penalized Efficiency Score (PES)** based on Lagrangian relaxation.
 
 ## Quantitative Results ($\alpha = 0.1$)
 
