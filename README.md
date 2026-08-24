@@ -58,6 +58,10 @@ Calibration set: `2,803` samples | Test set: `2,804` samples
 
 At the target level (alpha = 0.1), the main question is not which method attains the highest F1, but which methods achieve the required coverage with the smallest possible prediction sets. From this perspective, **ECOT** provides the best empirical trade-off in our experiments: it satisfies the 90% coverage target while remaining the only valid method with an average set size below 5. In contrast, **THR** attains slightly higher coverage, but does so by producing larger sets; **APS** and **RAPS** are both less efficient and empirically undercover at this operating point.
 
+# Conformal Prediction Evaluation: Trade-off Analysis
+
+In Conformal Prediction, the ideal method provides valid coverage ($\geq 1 - \alpha$) while maintaining statistical efficiency (minimal prediction set size). To quantitatively evaluate this trade-off, we formalize the model selection using a **Penalized Efficiency Score (PES)** based on Lagrangian relaxation.
+
 **Key observations:**
 
 - **Baseline (Fixed Threshold)** fails to meet the 90% coverage guarantee, despite having the smallest set size – it is overconfident and unreliable.
@@ -66,6 +70,35 @@ At the target level (alpha = 0.1), the main question is not which method attains
 - The legacy implementations of **APS and RAPS** both undercover (≈89.6%) and yield extremely large sets (≥9.2), highlighting the need for proper regularization when applying conformal prediction to multi-label problems.
 - F1 is reported for completeness, but **set predictors trade point-wise precision for guaranteed coverage** – their primary metrics are coverage and set size.
 - The comparison highlights the central conformal trade-off: methods that enforce coverage necessarily tend to increase prediction set size. Therefore, comparisons should not be made using F1 alone, but through the joint lens of **validity** (coverage) and **efficiency** (set size).
+
+
+## Quantitative Results ($\alpha = 0.1$)
+
+We define the objective function as:
+
+$$ \mathcal{L}(m, \lambda) = \bar{S}_m + \lambda \max\left(0, (1 - \alpha) - C_m\right) $$
+
+Where:
+- $\bar{S}_m$: Average Prediction Set Size for method $m$.
+- $C_m$: Empirical Marginal Coverage.
+- $1 - \alpha$: Target Coverage ($0.90$ in our experiments, where $\alpha = 0.1$).
+- $\lambda$: Penalty parameter for undercoverage (set to $100$ to map $1\%$ undercoverage to $1$ unit of set size penalty).
+
+Lower $\mathcal{L}$ scores indicate a better trade-off, prioritizing validity while aggressively optimizing for tighter prediction sets.
+
+The following table demonstrates the evaluation of various models on the CheXNet dataset. Models are ranked from best to worst based on their Penalized Score.
+
+| Rank | Method | Coverage ($C_m$) | Avg. Size ($\bar{S}_m$) | Target ? | Undercoverage Penalty | Final Score ($\mathcal{L}$) |
+|:---:|:---|:---:|:---:|:---:|:---:|:---:|
+| 🥇 **1** | **ECOT** | $0.9116$ | $4.86$ | ✅ Yes | $0$ | **$4.86$** |
+| 🥈 **2** | **Mondrian** | $0.9162$ | $5.44$ | ✅ Yes | $0$ | **$5.44$** |
+| 🥉 **3** | **THR** | $0.9290$ | $5.53$ | ✅ Yes | $0$ | **$5.53$** |
+| **4** | **APS** (legacy) | $0.8955$ | $9.20$ | ❌ No | $100 \times 0.0045 = 0.45$ | **$9.65$** |
+| **5** | **RAPS** (legacy) | $0.8959$ | $9.55$ | ❌ No | $100 \times 0.0041 = 0.41$ | **$9.96$** |
+| **6** | **Fixed Threshold**| $0.8188$ | $2.82$ | ❌ No | $100 \times 0.0812 = 8.12$ | **$10.94$** |
+
+### Conclusion
+While **Fixed Threshold** superficially offers the smallest set size ($2.82$), its severe undercoverage leads to the worst penalized score ($10.94$). **ECOT** proves to be the optimal method, successfully bounding the error rate while maintaining an average prediction set size under $5$.
 
 ### 📈 Overall Metrics Across α Levels
 
